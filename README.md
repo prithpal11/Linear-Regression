@@ -18,7 +18,7 @@ The Project objectives consisted of:
 1. Identifying what attributes make a movie popular.
 2. Formulating a prediction model to calculate the movie rating
 
-**R programming file**: reg_model_project-2.Rmd
+**R program file**: reg_model_project-2.Rmd
 
 To view the Project analysis report, [Click here](https://prithpal11.github.io/Linear-Regression/reg_model_project-2.html)
 
