@@ -4,7 +4,7 @@ Project for online course on 'Linear Regression', Duke University.
 
 This was course 3 of 5 under the 'Statistics with R Specialization'.
 
-# Project Data Information:
+# Dataset Information:
 
 The data set comprises of 651 randomly sampled movies produced and released before 2016. It captures how much the audiences and critics liked the movie by including information from Rotten Tomatoes and IMDB as well as numerous other variables about it.
 
