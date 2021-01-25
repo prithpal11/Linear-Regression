@@ -13,8 +13,8 @@ To access further details / instruction about the data, [CLick here]
 # Project Objective & analysis report:
 
 The Project objective consisted of:
-1. Identifying what attributes make a movie popular.
-2. 
+1. Identify what attributes make a movie popular.
+2. Complete Exploratory Data Analysis (EDA), modeling, and formulate a prediction model to calculate the movie rating.
 
 To view the Project analysis report, [Click here](https://prithpal11.github.io/Introduction-to-Probability-and-Data-with-R/BRFSS2013_Analysis_program)
 
