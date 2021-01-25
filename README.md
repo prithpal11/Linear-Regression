@@ -14,9 +14,9 @@ To access further details / instruction about the data, [CLick here]
 
 ## Project Objective & analysis report:
 
-The Project objective consisted of:
-1. Identify what attributes make a movie popular.
-2. Formulate a prediction model to calculate the movie rating
+The Project objectives consisted of:
+1. Identifying what attributes make a movie popular.
+2. Formulating a prediction model to calculate the movie rating
 
 **R programming file**: reg_model_project-2.Rmd
 
