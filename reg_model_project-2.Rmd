@@ -1,0 +1,738 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-library, message = FALSE}
+# Loading libraries
+
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(GGally)
+library(stringr)
+library(e1071)
+library(lubridate)
+library(standardize)
+library(kableExtra)
+```
+
+
+### Load data
+
+```{r load-data}
+# Loading data 
+
+load("movies.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+The data set is comprised of 651 randomly sampled movies produced and released before 2016. This data (audience & critics rating) was collected through a survey and includes information from Rotten Tomatoes and IMDB. Thus it is an **Observational study & we cannot establish causality**
+
+Since the audience & critics provided their rating voluntarily, the study would be affected by volunteer bias and hence cannot be generalized for the population of all the movies released & produced till date.
+
+
+* * *
+
+## Part 2: Research question
+
+The research question is split into 2 parts:  
+
+1. What attributes make a movie popular?  
+2. Establishing a prediction model
+
+Popularity of a movie can be represented / gauged in a number of ways. It is the people's choice that makes a movie popular & directly affects its earnings than that of the critics. Hence the rating provided by audience, as measured by **imdb_rating** & **audience_score**, shall be used to define a movie's popularity.
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+**SELECTION OF VARIABLES**
+
+Out of the 32 variables provided, there are certain variables that do not contribute at all or are irrelevant for this study. These variables which include **title**, **title_type**, **genre**, **runtime**, **mpaa_rating**, **imdb_url**, **rt_url**, **top200_box**, **dvd_rel_day** & **dvd_rel_month** are hence dropped.
+
+Though a movie's popularity may be attributed to the Director / lead actors of the movie, these variables exhibit a wide range & hence cannot be included into the analysis. Thus variables such as **director**, **actor1**, **actor2**, **actor3**, **actor4** & **actor5** are dropped.
+
+Next, variables which are known to be correlated are dropped:
+
+1. **critics_rating** & **audience_rating**: These variables are just the categorical formats of **critics_score** & **audience_score** respectively & are hence dropped.
+
+2. **best_pic_win**: The data captured by this variable is already captured in **best_pic_nom** & since it is known that all popular movies do not win an oscar, this variable is dropped.
+
+3. **dvd_rel_year**: Since the movies are first released in the theaters & then after a period of time released on DVD's, this variable needs to be positively correlated to **thtr_rel_year**. 
+
+
+```{r Scatterplot: dvd_rel_year Vs thtr_rel_year, message=FALSE, warning=FALSE, echo=FALSE}
+# Scatter plot: DVD release year Vs Theater release year
+
+ggplot(movies, aes(x=thtr_rel_year, y= dvd_rel_year)) + geom_jitter()
+```
+
+As per the article, [History of DVD](https://didyouknow.org/dvdhistory/), DVD technology became commercially available in 1996 but was initially expensive.  It was only after the year 2000 as per [Wikipedia](https://en.wikipedia.org/wiki/DVD_player#:~:text=The%20first%20DVD%2DAudio%20players,2000%20for%20%24700%20to%20%241%2C200.), when the cost of DVD players dropped from approx. 1000 USD to under 100 USD leading to sky-rocketing of sales of DVD & DVD players.
+
+
+This explains the random scatter of data until the start of 2000 post which a strong correlation between the two variables is evident. Hence the variable, **dvd_rel_year**, is dropped as well.
+
+A new dataset, **df1**, with all the non-essential variables dropped, is created.
+
+```{r Selecting variables, echo=FALSE}
+# Selecting required variables
+
+df1 <- movies %>%
+  select(studio,thtr_rel_year, thtr_rel_month, thtr_rel_day, imdb_rating, imdb_num_votes, critics_score, audience_score, best_pic_nom, best_actor_win, best_actress_win, best_dir_win, title)
+
+
+str(df1)
+```
+Studying the structure of the reduced dataset, following steps were taken:
+
+1) The 2 variables, **imdb_rating** & **audience_score**, are combined to create a new variable, **popularity_rating**, which measures the popularity of the movie on the scale of 0 to 10. This is the **dependent variable.**
+
+
+2) The studio variable consisting of 211 levels is reduced to the following 3 sub-types:
+      a) **Top 5**: If the movie Studio is considered to be the top 5 studios in the world.
+      b) **Top 10**: If the movie Studio is considered to be the top 6th to 10th studios in the world.
+      c) **"Not in top 10"**: If the movie Studio fails to fall in the first 2 categories.     
+
+3) Movie makers usually prefer to release movies around the holiday season which include Summer & Autumn. To include this into the study, the variable **thtr_rel_month** which represents the release month as a numerical variable is converted into a categorical variable **thtr_rel_season**.
+
+4) Weekend releases boosts the sales of the tickets which eventually decides the earnings of a movie & could contribute to a movie's popularity. Thus a weekend release might also be a governing factor. To include this aspect into the study, the variable **thtr_rel_day** is converted into a two-level categorical variable, **week_day** labelling them as follows:
+      a) **Weekend_release:** For movies released on Friday, Saturday or Sunday.
+      b) **Weekday_release:** For movies released on Monday through Thursday.
+
+
+```{r Modifing variables, echo=FALSE}
+
+# Creating the new variable 'popularity-rating'
+df1 <- df1 %>%
+  mutate(popularity_rating = (imdb_rating + (audience_score)/10)/2)
+
+# Reducing variable 'studio_rating' from over 200 levels to 3
+df1 <- df1 %>%
+mutate (studio_rating = ifelse(str_detect(studio, "New Line"), "Top 5", ifelse(str_detect(studio, "Screen Gems"), "Top 5", ifelse(str_detect(studio, "Sony"), "Top 5", ifelse(str_detect(studio, "TriStar"), "Top 5", ifelse(str_detect(studio, "Twentieth"), "Top 5", ifelse(str_detect(studio, "Universal"), "Top 5", ifelse(str_detect(studio, "Warner"), "Top 5", ifelse(str_detect(studio, "WARN"), "Top 5", ifelse(str_detect(studio, "Fox"), "Top 5", ifelse(str_detect(studio, "Metro"), "Top 10", ifelse(str_detect(studio, "MGM"), "Top 10", ifelse(str_detect(studio, "Paramount"), "Top 10", ifelse(str_detect(studio, "Wein"), "Top 10", ifelse(str_detect(studio, "Dream"), "Top 10", ifelse(str_detect(studio, "Lions"), "Top 10", "Not in Top 10"))))))))))))))))
+
+# Creating the new variable 'thtr_rel_season' to capture if the movie was released during the holiday season
+df1 <- df1 %>%
+  mutate(thtr_rel_season = ifelse(thtr_rel_month < 3, "Winter", ifelse(thtr_rel_month < 6, "Spring", ifelse(thtr_rel_month < 9, "Summer", ifelse(thtr_rel_month < 12, "Autumn", "Winter")))))
+
+# Creating the new variable 'week_day' to capture if the movie was released on a weekend
+df1 <- df1 %>%
+  mutate(date= df1$thtr_rel_year*10000 + df1$thtr_rel_month*100 + df1$thtr_rel_day)
+
+df1 <- df1 %>%
+  mutate(weekday= wday(ymd(df1$date)))
+
+df1 <- df1 %>%
+  mutate(week_day= ifelse(weekday == 1, "Weekend_release", ifelse(weekday > 5, "Weekend_release", "Weekday_release")))
+
+
+df1<- na.omit(df1) 
+
+df1 <- df1 %>% select(popularity_rating, critics_score, thtr_rel_year, imdb_num_votes, studio_rating,  thtr_rel_season, week_day,  best_pic_nom, best_actor_win, best_actress_win, best_dir_win, title)
+
+```
+
+**CHECK FOR MULTI-COLLINEARITY:**
+
+Next the numerical variables are checked for their distribution & to see if they are correlated to each other.
+
+```{r Generalized pair plot - 1, echo=FALSE}
+# Generalized pair plot to check correlation between variables 
+
+ggpairs (df1, 2:4)
+```
+
+\n The plot reveals correlation between the variables **imdb_num_votes** & **critics_score** & **thtr_rel_year**. 
+ The plot also reveals that the variable **imdb_num_votes** is highly right skewed. Since regression analysis is carried out based on the mean value of a variable and since the mean is (usually) not a good measure of central tendency in a skewed distribution, using the variable **imdb_num_votes**, as is, may make the regression results rather inappropriate. 
+ 
+ Hence instead of outright rejecting it, a log transformation is applied & the condition for collinearity is re-checked.
+ 
+ 
+```{r variable transformation, echo=FALSE}
+
+# Log transformation of imdb_num_votes variable
+df1 <- df1 %>%
+mutate (imdb_num_votes = log1p(imdb_num_votes))
+
+names(df1)[names(df1) == "imdb_num_votes"] <- "log_imdb_num_votes"
+
+
+# Generalized pair plot to re-check correlation between variables 
+ggpairs (df1, 2:4)
+
+```
+<p> Post the transformation it can be seen that the **log_imdb_num_votes** looks to be normally distributed & is still correlated with **thtr_rel_year**. Since the **thtr_rel_year** should not be a governing factor that makes a movie popular, this variable is dropped.
+
+```{r Dropping variable thtr_rel_year, echo=FALSE}
+
+# Dropping variable thtr_rel_year
+df1 <- select(df1,-thtr_rel_year)
+
+```
+* * *
+
+## Part 4: Modeling
+
+
+Now that all the variables are in the form as required for the analysis, we can proceed with research questions at hand.
+
+**Research question 1: What attributes make a movie popular?**
+
+For arriving at the significant attributes, the **Backward substitution using p-value** method is used. Starting with the Full model, variables are dropped based on their significance level.
+
+## Full Model
+
+```{r Significant Predictor: Full Model, echo=FALSE}
+
+# Significant Predictor: Full Model
+
+lm0 <- lm(popularity_rating ~ critics_score + studio_rating + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+
+summary (lm0)
+```
+From the summary table, it can be seen that the variable **best_dir_win** has the highest p-value of **0.4721** & is hence dropped.
+
+**ITERATION 1:**
+
+```{r Significant Predictor: Iteration 1, echo= FALSE, message= FALSE}
+
+# Significant Predictor: Iteration 1
+
+lm1 <- lm(popularity_rating ~ critics_score + studio_rating + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win, data=df1)
+
+summary (lm1)
+```
+From the summary table, it can be seen that the variable **week_day** has the highest p-value of **0.3880** & is hence dropped.
+
+**ITERATION 2:**
+
+```{r Significant Predictor: Iteration 2, echo= FALSE, message= FALSE}
+
+# Significant Predictor: Iteration 2
+
+lm2 <- lm(popularity_rating ~ critics_score + studio_rating + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win, data=df1)
+
+summary (lm2)
+```
+From the summary table, it can be seen that the variable **best_actress_win** has the highest p-value of **0.3556** & is hence dropped.
+
+**ITERATION 3:**
+```{r Significant Predictor: Iteration 3, echo= FALSE, message= FALSE}
+
+# Significant Predictor: Iteration 3
+
+lm3 <- lm(popularity_rating ~ critics_score + studio_rating + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+
+summary (lm3)
+```
+From the summary table, it can be seen that the variable **thtr_rel_season** has the highest p-value of **0.2705** & is hence dropped.
+
+**ITERATION 4:**
+```{r Significant Predictor: Iteration 4, echo= FALSE, message= FALSE}
+
+# Significant Predictor: Iteration 4
+
+lm4 <- lm(popularity_rating ~ critics_score + studio_rating  + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+
+summary (lm4)
+```
+From the summary table, it can be seen that the variable **best_actor_win** has the highest p-value of **0.3213** & is hence dropped.
+
+**ITERATION 5:**
+```{r Significant Predictor: Iteration 5, echo= FALSE, message= FALSE}
+
+# Significant Predictor: Iteration 5
+
+lm5 <- lm(popularity_rating ~ critics_score + studio_rating  + log_imdb_num_votes + best_pic_nom, data=df1)
+
+summary (lm5)
+```
+From the summary table, it can be seen that the variable **best_pic_nom** has the highest p-value of **0.0565** which is very close to the cut-off value of 0.05. Since it is known that the **best_pic_nom** does indeed affect a movie's popularity, the analysis is stopped.
+
+Next we check if the conditions for Linear regression are met:
+
+**Condition 1: Linear relationship between (numeric) independent variables & dependent variable.**
+
+This condition can be checked by plotting the residuals against each numerical variable. A random scatter of data without any pattern ensures that this condition is met.
+
+```{r Significant Predictor: Condition 1, , echo=FALSE}
+# Check condition 1
+
+plot(lm5$residuals ~ df1$critics_score)
+plot(lm5$residuals ~ df1$log_imdb_num_votes)
+```
+
+\n The two plots exhibit random variation, hence it can be concluded that this condition is met.
+
+
+**Condition 2: Nearly normal residuals with mean 0**
+
+This condition can be checked by:  
+1. A histogram of residuals  
+2. Normal plot along with the data on skewness
+
+```{r Significant Predictor: Condition 2 - Check for normality , echo=FALSE}
+# Check condition 2
+
+hist(lm5$residuals)
+qqnorm(lm5$residuals)
+qqline(lm5$residuals)
+```
+
+```{r Significant Predictor: Condition 2 - Check for skewness, , echo=FALSE}
+# Check for skewness
+
+s <-skewness(lm5$residuals)
+```
+
+\n From the plots as well through the **skewness factor** of `r round(s, digits = 4)` < 0.5, it evident that the residual is normally distributed with mean at 0.
+
+
+**Condition 3: Constant variability of residuals**
+
+This condition can be checked by looking at the residuals vs fitted plot.  Absence of any pattern in the data would ensure that this condition is met.
+
+```{r Significant Predictor: Condition 3 - Check for Constant variability,  echo=FALSE}
+#Significant Predictor: Condition 3, Constant variability
+
+plot(lm5$residuals ~ lm5$fitted)
+plot(abs(lm5$residuals) ~ lm5$fitted)
+```
+
+\n From the two plots it is evident that it is a **Fanning-type pattern** plot. Hence this condition is violated.  
+
+
+**Condition 4: Residuals are independent**
+
+```{r Significant Predictor: Condition 4 - Check for Residuals,   echo=FALSE}
+# Significant Predictor: Condition 4 - Check for Residuals
+
+plot(lm5$residuals)
+```
+<p>The plot shows a random distribution and since the samples were randomly selected & # of observations of 651 movies is less than 10% of the total # of movies produced until 2016, this condition is met as well.
+
+
+```{r Significant Predictor: Condition 3 revisited, echo=FALSE}
+# Significant Predictor: Condition 3 revisited
+
+hist(df1$popularity_rating)
+```
+<p>It is evident from the plot that the data is left-skewed which can be fixed by performing a squared transformation.  
+
+
+```{r Squaring dependent, message=FALSE, echo=FALSE}
+# Squared dependent
+
+lm6 <- lm((popularity_rating)^2 ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+```
+Next we check if the condition 3 of the regression analysis is met or not. 
+
+```{r Check for Constant variability, echo=FALSE}
+# Condition 3: Check for Constant variability
+
+plot(lm6$residuals ~ lm6$fitted)
+plot(abs(lm6$residuals) ~ lm6$fitted)
+```
+<p> From the above plot it is evident that the condition 3 seems to have improved.
+
+<p> A quick check is done to see if the remaining conditions are met as well.  
+```{r Check for normality of residuals, echo=FALSE}
+# Check for normality of residuals
+
+plot(lm6$residuals ~ df1$critics_score)
+plot(lm6$residuals ~ df1$log_imdb_num_votes)
+
+hist(lm6$residuals)
+qqnorm(lm6$residuals)
+qqline(lm6$residuals)
+
+plot(lm6$residuals ~ lm6$fitted)
+plot(abs(lm6$residuals) ~ lm6$fitted)
+
+plot(lm6$residuals)
+
+plot(lm6$residuals ~ lm6$fitted)
+plot(abs(lm6$residuals) ~ lm6$fitted)
+```
+<p> From the above plot it is evident that the condition 3 seems to have improved.
+
+<p> A quick check is done to see if the remaining conditions are met as well.  
+
+```{r Checking conditions for Linear regression, echo=FALSE}
+
+plot(lm6$residuals ~ df1$critics_score)
+plot(lm6$residuals ~ df1$log_imdb_num_votes)
+
+hist(lm6$residuals)
+qqnorm(lm6$residuals)
+qqline(lm6$residuals)
+
+plot(lm6$residuals ~ lm6$fitted)
+plot(abs(lm6$residuals) ~ lm6$fitted)
+
+plot(lm6$residuals)
+
+```
+
+From the above plot it is clear that all the conditions are met and hence the model fits the dataset.
+
+
+## Part 6.1: Conclusion
+
+It is seen from the analysis that **critics_score, studio_rating, imdb_num_votes & best_pic_nom** seem to be the critical attributes that make a movie popular.
+
+
+**Research question 2: Establishing a prediction model**
+
+Since we are interested in creating a **Prediction model**, the **Adjusted R-squared** criterion shall be used to finalize the variables to be included in the model.
+
+```{r Predicition model: Full Model, echo=FALSE}
+
+lm0 <- lm(popularity_rating ~ critics_score + studio_rating + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+
+r_sq_0 <- round(summary (lm0)$adj.r.squared, digits = 4)
+```
+Thus, the Adj. R-squared value for the Full model is **`r r_sq_0`**.
+
+**ITERATION 1:**
+
+Next we drop 1 variable at a time & check for the **Adj. R-squared value.**
+
+```{r Predicition model: Iteration 1, , echo=FALSE}
+
+lm1.1 <- lm(popularity_rating ~ studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+r_sq_1.1 <- round(summary (lm1.1)$adj.r.squared, digits = 4)
+
+lm1.2 <- lm(popularity_rating ~ critics_score +  thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+r_sq_1.2 <- round(summary (lm1.2)$adj.r.squared, digits = 4)
+
+lm1.3 <- lm(popularity_rating ~ critics_score + studio_rating + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+r_sq_1.3 <- round(summary (lm1.3)$adj.r.squared, digits = 4)
+
+lm1.4 <- lm(popularity_rating ~ critics_score + studio_rating + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+r_sq_1.4 <- round(summary (lm1.4)$adj.r.squared, digits = 4)
+
+lm1.5 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day + best_pic_nom + best_actor_win + best_actress_win + best_dir_win, data=df1)
+r_sq_1.5 <- round(summary (lm1.5)$adj.r.squared, digits = 4)
+
+lm1.6 <- lm(popularity_rating ~ critics_score + studio_rating  +  thtr_rel_season + week_day + log_imdb_num_votes + best_actor_win + best_actress_win + best_dir_win, data=df1)
+r_sq_1.6 <- round(summary (lm1.6)$adj.r.squared, digits = 4)
+
+lm1.7 <- lm(popularity_rating ~ critics_score + studio_rating  +  thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actress_win + best_dir_win, data=df1)
+r_sq_1.7 <- round(summary (lm1.7)$adj.r.squared, digits = 4)
+
+lm1.8 <- lm(popularity_rating ~ critics_score + studio_rating +  thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom  + best_actor_win + best_dir_win, data=df1)
+r_sq_1.8 <- round(summary (lm1.8)$adj.r.squared, digits = 4)
+
+lm1.9 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_1.9 <- round(summary (lm1.9)$adj.r.squared, digits = 4)
+
+
+## ADJUSTED R-SQUARED TABLE POST ITERATION 1
+
+ITERATION_1 <- matrix(c("critics_score", r_sq_1.1, "studio_rating", r_sq_1.2,  "thtr_rel_season", r_sq_1.3, "week_day", r_sq_1.4, "log_imdb_num_votes", r_sq_1.5, "best_pic_nom", r_sq_1.6, "best_actor_win", r_sq_1.7, "best_actress_win", r_sq_1.8, "best_dir_win", r_sq_1.9 ),ncol=2,byrow=TRUE)
+colnames(ITERATION_1) <- c("Variable excluded", "Adj. R-sq value")
+
+ITERATION_1 <- as.table(ITERATION_1)
+
+kable(ITERATION_1) %>%
+  add_header_above(c("ADJUSTED R-SQUARED: FULL MODEL = 0.5863" =3))%>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+  
+```
+From the above table, it is clear that dropping the variable **best_dir_win** gives the highest Adj. R-squared of **`r r_sq_1.9`** & is hence dropped.
+
+
+**ITERATION 2:**
+
+
+```{r Predicition model: Iteration 2, echo=FALSE, message=FALSE }
+
+lm2.0 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.0 <- round(summary (lm2.0)$adj.r.squared, digits = 4)
+
+lm2.1 <- lm(popularity_rating ~  studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.1 <- round(summary (lm2.1)$adj.r.squared, digits = 4)
+
+lm2.2 <- lm(popularity_rating ~ critics_score   + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.2 <- round(summary (lm2.2)$adj.r.squared, digits = 4)
+
+lm2.3 <- lm(popularity_rating ~ critics_score + studio_rating  + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.3 <- round(summary (lm2.3)$adj.r.squared, digits = 4)
+
+lm2.4 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.4 <- round(summary (lm2.4)$adj.r.squared, digits = 4)
+
+lm2.5 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day  + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.5 <- round(summary (lm2.5)$adj.r.squared, digits = 4)
+
+lm2.6 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes + best_actor_win  + best_actress_win, data=df1)
+r_sq_2.6 <- round(summary (lm2.0)$adj.r.squared, digits = 4)
+
+lm2.7 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes  + best_pic_nom  + best_actress_win, data=df1)
+r_sq_2.7 <- round(summary (lm2.7)$adj.r.squared, digits = 4)
+
+lm2.8 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + week_day + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+r_sq_2.8 <- round(summary (lm2.8)$adj.r.squared, digits = 4)
+
+
+## ADJUSTED R-SQUARED TABLE POST ITERATION 2
+
+ITERATION_2 <- matrix(c("critics_score", r_sq_2.1, "studio_rating", r_sq_2.2,  "thtr_rel_season", r_sq_2.3, "week_day", r_sq_2.4, "imdb_num_votes", r_sq_2.5, "best_pic_nom", r_sq_2.6, "best_actor_win", r_sq_2.7, "best_actress_win", r_sq_2.8),ncol=2,byrow=TRUE)
+colnames(ITERATION_2) <- c("Variable excluded", "Adj. R-sq value")
+
+ITERATION_2 <- as.table(ITERATION_2)
+
+kable(ITERATION_2) %>%
+  add_header_above(c("ADJUSTED R-SQUARED: FULL MODEL = 0.5866 "=3))%>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+  
+```
+From the above table, it is clear that dropping the variable **week_day** gives the highest Adj. R-squared of **`r r_sq_2.4`** & is hence dropped.
+
+
+**ITERATION 3:**
+
+
+```{r Predicition model: Iteration 3, echo=FALSE, message=FALSE }
+
+lm3.0 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_3.0 <- round(summary (lm3.0)$adj.r.squared, digits = 4)
+
+lm3.1 <- lm(popularity_rating ~ studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_3.1 <- round(summary (lm3.1)$adj.r.squared, digits = 4)
+
+lm3.2 <- lm(popularity_rating ~ critics_score   + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_3.2 <- round(summary (lm3.2)$adj.r.squared, digits = 4)
+
+lm3.3 <- lm(popularity_rating ~ critics_score + studio_rating  + log_imdb_num_votes + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_3.3 <- round(summary (lm3.3)$adj.r.squared, digits = 4)
+
+lm3.4 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season  + best_pic_nom + best_actor_win  + best_actress_win, data=df1)
+r_sq_3.4 <- round(summary (lm3.4)$adj.r.squared, digits = 4)
+
+lm3.5 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes +  best_actor_win  + best_actress_win, data=df1)
+r_sq_3.5 <- round(summary (lm3.5)$adj.r.squared, digits = 4)
+
+lm3.6 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom +  best_actress_win, data=df1)
+r_sq_3.6 <- round(summary (lm3.6)$adj.r.squared, digits = 4)
+
+lm3.7 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+r_sq_3.7 <- round(summary (lm3.7)$adj.r.squared, digits = 4)
+
+
+## ADJUSTED R-SQUARED TABLE POST ITERATION 3
+
+ITERATION_3 <- matrix(c("critics_score", r_sq_3.1, "studio_rating", r_sq_3.2,  "thtr_rel_season", r_sq_3.3, "log_imdb_num_votes", r_sq_3.4, "best_pic_nom", r_sq_3.5, "best_actor_win", r_sq_3.6, "best_actress_win", r_sq_3.7),ncol=2,byrow=TRUE)
+colnames(ITERATION_3) <- c("Variable excluded", "Adj. R-sq value")
+
+ITERATION_3 <- as.table(ITERATION_3)
+
+kable(ITERATION_3) %>%
+  add_header_above(c("ADJUSTED R-SQUARED: FULL MODEL = 0.5868 "=3))%>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+  
+```
+From the above table, it is clear that dropping the variable **best_actress_win** gives the highest Adj. R-squared of **`r r_sq_3.7`** & is hence dropped.
+
+
+**ITERATION 4:**
+
+
+```{r Predicition model: Iteration 4, echo=FALSE, message=FALSE }
+
+lm4.0 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+r_sq_4.0 <- round(summary (lm4.0)$adj.r.squared, digits = 4)
+
+lm4.1 <- lm(popularity_rating ~ studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+r_sq_4.1 <- round(summary (lm4.1)$adj.r.squared, digits = 4)
+
+lm4.2 <- lm(popularity_rating ~ critics_score  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+r_sq_4.2 <- round(summary (lm4.2)$adj.r.squared, digits = 4)
+
+lm4.3 <- lm(popularity_rating ~ critics_score + studio_rating  +  log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+r_sq_4.3 <- round(summary (lm4.3)$adj.r.squared, digits = 4)
+
+lm4.4 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + best_pic_nom + best_actor_win, data=df1)
+r_sq_4.4 <- round(summary (lm4.4)$adj.r.squared, digits = 4)
+
+lm4.5 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_actor_win, data=df1)
+r_sq_4.5 <- round(summary (lm4.5)$adj.r.squared, digits = 4)
+
+lm4.6 <- lm(popularity_rating ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom , data=df1)
+r_sq_4.6 <- round(summary (lm4.6)$adj.r.squared, digits = 4)
+
+
+## ADJUSTED R-SQUARED TABLE POST ITERATION 4
+
+ITERATION_4 <- matrix(c("critics_score", r_sq_4.1, "studio_rating", r_sq_4.2,  "thtr_rel_season", r_sq_4.3, "log_imdb_num_votes", r_sq_4.4, "best_pic_nom", r_sq_4.5, "best_actor_win", r_sq_4.6),ncol=2,byrow=TRUE)
+colnames(ITERATION_4) <- c("Variable excluded", "Adj. R-sq value")
+
+ITERATION_4 <- as.table(ITERATION_4)
+
+kable(ITERATION_4) %>%
+  add_header_above(c("ADJUSTED R-SQUARED: FULL MODEL = 0.5869 "=3))%>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+  
+```
+
+From the above table, it is clear there is no increase in Adj. R-squared value. Hence we can say that we have achieved our **Parsimonious model.**
+
+Next we check if the conditions for Linear regression are met:
+
+**Condition 1: Linear relationship between numerical independent variables & dependent variable.**
+
+This condition can be checked by plotting the residuals against each numerical variable. A random scatter of data without any pattern ensures that this condition is met.
+
+```{r Condition 1, echo=FALSE}
+plot(lm4.0$residuals ~ df1$critics_score)
+
+plot(lm4.0$residuals ~ df1$log_imdb_num_votes)
+```
+
+\n The two plots exhibit random variation, hence it can be concluded that this condition is met.
+
+
+**Condition 2: Nearly normal residuals with mean 0**
+
+This condition can be checked by:
+1. A histogram of residuals
+2. Normal plot along with the data on skewness
+
+```{r Condition 2, echo=FALSE}
+hist(lm4.0$residuals)
+qqnorm(lm4.0$residuals)
+qqline(lm4.0$residuals)
+```
+
+```{r Condition 2: Check for skewness, echo=FALSE}
+s <-skewness(lm4.0$residuals)
+```
+
+\n From the plots as well through the **skewness factor** of `r round(s, digits = 4)` < 0.5, it evident that the residual is normally distributed with mean at 0.
+
+
+**Condition 3: Constant variability of residuals**
+
+This condition can be checked by looking at the residuals vs fitted plot.  Absence of any pattern in the data would ensure that this condition is met.
+
+```{r Condition 3, echo=FALSE}
+plot(lm4.0$residuals ~ lm4.0$fitted)
+plot(abs(lm4.0$residuals) ~ lm4.0$fitted)
+```
+
+\n From the two plots it is evident that it is a **Fanning-type pattern** plot. Hence this condition is violated.  
+
+
+**Condition 4: Residuals are independent**
+
+```{r Condition 4, echo=FALSE}
+plot(lm4.0$residuals)
+```
+<p>The plot shows a random distribution and since the samples were randomly selected & # of observations of 651 movies is less than 10% of the total # of movies produced until 2016, this condition is met as well.
+ 
+**Fixing condition 3:**
+
+Similar fix is done as was done in the first part,
+
+```{r Fixing condition 3, message=FALSE, echo=FALSE}
+## Squared dependent
+
+lm5.0 <- lm((popularity_rating)^2 ~ critics_score + studio_rating  + thtr_rel_season + log_imdb_num_votes + best_pic_nom + best_actor_win, data=df1)
+
+plot(lm5.0$residuals ~ lm6$fitted)
+plot(abs(lm5.0$residuals) ~ lm6$fitted)
+```
+<p> From the above plot it is evident that the condition 3 seems to have improved.
+
+<p> A quick check is done to see if the remaining conditions are met as well.  
+
+```{r Checking condition for Linear regression - 2 , echo=FALSE}
+plot(lm5.0$residuals ~ df1$critics_score)
+plot(lm5.0$residuals ~ df1$log_imdb_num_votes)
+
+hist(lm5.0$residuals)
+qqnorm(lm5.0$residuals)
+qqline(lm5.0$residuals)
+
+plot(lm5.0$residuals ~ lm6$fitted)
+plot(abs(lm5.0$residuals) ~ lm6$fitted)
+
+plot(lm5.0$residuals)
+
+```
+
+
+From the above plot it is clear that all the conditions are met and hence the model fits the dataset.
+
+* * *
+
+## Part 5.2: Prediction
+
+```{r Summary of final ieration , echo=FALSE}
+# List ofvariables in final iteration
+
+summary(lm5.0)
+```
+
+
+The equation for prediction can be summed up as:
+
+**popularity_rating = sqrt( 1.566 + 0.463 x critics_score - 2.546 studio_rating: Top 10 - 0.706 studio_rating: Top 5 - 1.123 thtr_rel_season:Spring - 1.754 thtr_rel_season:Summer + 1.122 thtr_rel_season:Winter + 1.62 x log_imdb_num_votes + 7.227 best_pic_nom: yes  - 1.894 best_actor_win:yes)**
+
+We would test this for the movie "Black Panther" for which [imdb_rating](https://www.imdb.com/title/tt1825683/?ref_=adv_li_tt) is 7.3, released by Walt Disney on 16th Feb 2018. # of voters on IMDB is 611,125 & which was nominated & won the oscar for the best movie while none of its lead actors have ever won an oscar. The movie has a critics_rating of 96 & audience_rating of 79 on [Rotten Tomatoes](https://www.rottentomatoes.com/m/black_panther_2018). The calculated popularity_rating for this movie is 7.6.
+
+```{r Setting parameters for - Black Panther, echo=FALSE}
+# Setting parameters for 'Black Panther'
+
+black_panther<-data.frame(critics_score = 96, studio_rating = "Top 5", thtr_rel_season = "Winter", log_imdb_num_votes = log1p(611125), best_pic_nom = "yes", best_actor_win = "no")
+```
+
+```{r : Prediciting rating using Regression model, echo=FALSE}
+# Predicting rating using Regression model
+
+sqrt(predict(lm5.0, black_panther, interval = "predict"))
+```
+
+The model thus predicts that popularity_score of the movie, **Black Panther** is 8.673 (actual popularity_score = 7.6) with a 95% confidence interval of 7.17 to 9.95.
+
+## Part 6.2: Conclusion
+
+The observations from the study can be summarized as follows:  
+
+1. A handful of variables which includes **critics_score, studio_rating, imdb_num_votes & best_pic_nom** seem to be the significant predictors that make a movie popular.  
+2. Forming the Prediction model adds two more variable to the list which includes, **thtr_rel_season & best_actor_win.**  
+3. The **popularity_rating** of a movie is observed to be positively related to **critics_score, imdb_num_votes & best_pic_nom** as indicated by the positive slope co-efficient in the summary table.  
+4. The **popularity_rating** of a movie is observed to have a negative relation w.r.t. variables that included **studio_rating & best_actor_win** contrary to having a positive relationship.  
+a. For the variable **studio_rating**, poor categorization of the variable might be responsible for anomaly.  
+b. The variable **best_actor_win** right now does not differentiate between an actor who would have won several awards to an actor who has just won once. Adding this additional information would help in correcting this error.  
+
+Since this was an observational study, results from the study are non-causal in nature. The study is also affected by **volunteering bias** which comes from the audience who chose to review the movies through the IMDB & Rotten Tomatoes platform. The results can hence be generalized only to the audience & critics for these websites & not to the general population.  
+
+
+Including certain additional information would tend to make this study more fruitful:  
+1. # of awards (not limited to oscars) won by the lead actor, actress & the director of the movie.  
+2. Information on advertisement & marketing spendings for movie promotion.   
+3. Information on box-office earnings. The ratio of 3 & 4 would create an interesting variable to gauge the commercial success of a movie.  
+4. # of critics who voted rather than just the critics_rating for Rotten Tomatoes.  
+5. Demography & gender of audience & critics who voted for the movie. 
+
+\
+\
+\
+
+
