@@ -10,7 +10,7 @@ This was course 3 of 5 under the 'Statistics with R Specialization'.
 
 The data set comprises of 651 randomly sampled movies produced and released before 2016. It captures how much the audiences and critics liked the movie by including information from Rotten Tomatoes and IMDB as well as numerous other variables about it.
 
-To access further details / instruction about the data, [CLick here](https://prithpal11.github.io/Linear-Regression/movies_codebook.html) 
+To access further details / instruction about the data, [Click here](https://prithpal11.github.io/Linear-Regression/movies_codebook.html) 
 
 ## Project Objective & analysis report:
 
